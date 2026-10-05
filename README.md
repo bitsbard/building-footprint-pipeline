@@ -6,64 +6,106 @@ A serverless geospatial ETL pipeline that turns Overture Maps building footprint
 
 ## Architecture: Decoupled Compute + Cloud-Native Storage
 
-```
-Overture GeoParquet (S3)
-   │  HTTP range requests, bbox pushdown (no full download)
-   ▼
-DuckDB (embedded compute) ── centroid → H3 res 9 → GROUP BY
-   │
-   ├─ join with hazard polygons (GeoJSON) + benchmark
-   ▼
-GeoParquet ── GeoJSONSeq ── tippecanoe ──► .pmtiles (static file)
-                                               │ HTTP range requests
-                                               ▼
-                                     MapLibre GL JS (static site)
+```mermaid
+flowchart LR
+    subgraph STORAGE_IN["Cloud-Native Storage (input)"]
+        S3[("Overture Maps<br/>GeoParquet on S3<br/>theme=buildings")]
+    end
+
+    subgraph COMPUTE["Ephemeral Compute (local / CI / container)"]
+        direction TB
+        S1["01_ingest_and_h3.py<br/>bbox pushdown, centroid,<br/>H3 res 9, GROUP BY"]
+        S2["02_hazard_join.py<br/>hazard GeoJSON,<br/>spatial join, benchmark"]
+        S3X["03_export_tiles.py<br/>GeoParquet, GeoJSONSeq,<br/>tippecanoe"]
+        S1 --> S2 --> S3X
+    end
+
+    subgraph STORAGE_OUT["Cloud-Native Storage (output)"]
+        PQ[("h3_agg.parquet<br/>h3_hazard.parquet<br/>hex_hazard.geoparquet")]
+        PM[("hex_hazard.pmtiles<br/>static file")]
+    end
+
+    subgraph CLIENT["Static Frontend"]
+        MAP["MapLibre GL JS<br/>+ pmtiles protocol"]
+    end
+
+    S3 -- "HTTP range requests<br/>(no full download)" --> S1
+    S1 --> PQ
+    PQ --> S2
+    S3X --> PM
+    PM -- "HTTP range requests" --> MAP
 ```
 
-- **Storage is files**: Parquet on S3 in, GeoParquet/PMTiles out. Nothing to provision, patch, or back up.
-- **Compute is ephemeral**: DuckDB runs in-process on a laptop, CI job, or container.
-- **Why GeoParquet**: columnar and compressed, with bbox statistics that let DuckDB skip irrelevant row groups. Only the needed columns and ranges are fetched.
-- **Why H3**: building centroids are snapped to hexagon ids so the heavy part of the analysis is an integer `GROUP BY`. The polygon-vs-polygon join then runs on thousands of hexagons rather than every building footprint, which is where traditional PostGIS workflows spend most of their time.
-- **Why PMTiles**: one static file served with range requests, so no tile server is required.
+- **Storage is files:** Parquet on S3 in, GeoParquet and PMTiles out. Nothing to provision, patch, or back up.
+- **Compute is ephemeral:** DuckDB runs in-process on a laptop, CI job, or container, and disappears when done.
+- **Why GeoParquet:** columnar and compressed, with bbox statistics that let DuckDB skip irrelevant row groups and fetch only the needed columns and byte ranges.
+- **Why H3:** building centroids are snapped to hexagon ids, so the heavy part of the analysis is an integer `GROUP BY`. The polygon-on-polygon join then runs on thousands of hexagons instead of every building footprint, which is where traditional PostGIS workflows spend most of their time.
+- **Why PMTiles:** one static file served with range requests, so no tile server is required.
 
 ## Setup
 
+Run each block one at a time, in order, from the project root (`cloud-native-geo/`).
+
+**1. Create a virtual environment.** Isolates the project's Python dependencies from your system Python.
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+```
+
+**2. Activate it.** Makes `python` and `pip` point at the virtual environment. On Windows use `.venv\Scripts\activate` instead.
+
+```bash
+source .venv/bin/activate
+```
+
+**3. Install Python dependencies.** Installs DuckDB. The `spatial`, `httpfs`, and `h3` extensions are downloaded by the scripts on first run.
+
+```bash
 pip install -r requirements.txt
 ```
 
-Install [tippecanoe](https://github.com/felt/tippecanoe) (v2.17+ for PMTiles output):
+**4. Install tippecanoe (v2.17+).** Required by step 3 of the pipeline to build PMTiles. On Linux, build from [source](https://github.com/felt/tippecanoe). On Windows, use WSL.
 
 ```bash
-brew install tippecanoe        # macOS
-# Linux/Windows: build from source (WSL on Windows)
+brew install tippecanoe
 ```
 
 ## Run
 
+Run each block one at a time, in order.
+
+**1. Ingest and aggregate.** Queries Overture's public S3 bucket with a Santa Cruz bounding box, so only the matching byte ranges are read. Converts each building centroid to an H3 res 9 cell and aggregates building count and footprint area per cell. Writes `data/h3_agg.parquet`.
+
 ```bash
-python src/01_ingest_and_h3.py   # S3 -> H3 aggregates (data/h3_agg.parquet)
-python src/02_hazard_join.py     # mock hazard layer, join, benchmark
-python src/03_export_tiles.py    # GeoParquet + PMTiles
-npx http-server . -p 8080 --cors # PMTiles needs HTTP range support
-# open http://localhost:8080/frontend/
+python src/01_ingest_and_h3.py
 ```
 
-Pin an Overture release with `OVERTURE_RELEASE=<version> python src/01_ingest_and_h3.py`. The default is the latest release from Overture's STAC catalog.
+To pin a specific Overture release instead of using the latest:
 
-Note: `python -m http.server` does not support range requests, so use `http-server` or similar.
+```bash
+OVERTURE_RELEASE=<version> python src/01_ingest_and_h3.py
+```
 
-## Notes and limitations
+**2. Join hazard zones and benchmark.** Writes a synthetic wildfire hazard GeoJSON, spatially joins it to the H3 hexagons, times the join over several runs, and writes `data/h3_hazard.parquet`.
 
-- The wildfire hazard layer is **synthetic**. Replace `ZONES` in `02_hazard_join.py` with real data (e.g. CAL FIRE FHSZ) for real analysis.
-- Footprint area is computed in UTM 10N (EPSG:32610), which suits Santa Cruz. Change it for other regions.
-- Benchmark results depend on hardware and network. Record your own numbers and compare against a PostGIS instance on the same machine.
+```bash
+python src/02_hazard_join.py
+```
 
-## Resume bullets
+**3. Export tiles.** Writes `data/hex_hazard.geoparquet`, converts it to GeoJSONSeq, then runs tippecanoe to produce `data/hex_hazard.pmtiles`.
 
-- Built a serverless geospatial ETL pipeline using DuckDB Spatial to query Overture Maps GeoParquet directly on S3 with bounding-box pushdown, avoiding a full dataset download or any database server.
-- Indexed building footprints to Uber H3 (resolution 9) and aggregated count and footprint area per hexagon, replacing polygon-on-polygon joins with integer-key aggregation.
-- Joined H3 aggregates to a wildfire hazard layer with a spatial join and wrote a benchmark harness comparing DuckDB timings against a PostGIS baseline [add your measured results].
-- Exported results to GeoParquet and generated PMTiles with Tippecanoe, served as a static file to a MapLibre GL JS dashboard with no tile server.
-- Designed the architecture around decoupled compute and cloud-native storage, so the pipeline runs with no managed infrastructure.
+```bash
+python src/03_export_tiles.py
+```
+
+**4. Serve the project.** Starts a local static server from the project root. PMTiles needs HTTP range request support, so `python -m http.server` will not work here.
+
+```bash
+npx http-server . -p 8080 --cors
+```
+
+**5. Open the map.** Visit this URL in your browser. Use the dropdown to switch between hazard class and building count coloring, and click a hexagon for details.
+
+```text
+http://localhost:8080/frontend/
+```
