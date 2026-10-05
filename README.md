@@ -61,7 +61,7 @@ brew install tippecanoe
 
 Run each block one at a time, in order.
 
-**1. Ingest and aggregate.** Queries Overture's public S3 bucket with a Santa Cruz bounding box, so only the matching byte ranges are read. Converts each building centroid to an H3 res 9 cell and aggregates building count and footprint area per cell. Writes `data/h3_agg.parquet`.
+**1. Ingest and aggregate.** Queries Overture's public S3 bucket with a Santa Cruz County, CA bounding box, so only the matching byte ranges are read. Converts each building centroid to an H3 res 9 cell and aggregates building count and footprint area per cell. Writes `data/h3_agg.parquet`.
 
 ```bash
 python src/01_ingest_and_h3.py
