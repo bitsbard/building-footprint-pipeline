@@ -6,16 +6,31 @@ A serverless geospatial ETL pipeline that turns Overture Maps building footprint
 
 ## Architecture: Decoupled Compute + Cloud-Native Storage
 
-```mermaid
-flowchart TD
-    A["Overture Maps GeoParquet (S3)"] --> B["DuckDB: centroid + H3 res 9 + GROUP BY"]
-    B --> C["h3_agg.parquet"]
-    C --> D["DuckDB: spatial join with hazard zones + benchmark"]
-    D --> E["h3_hazard.parquet"]
-    E --> F["GeoParquet export"]
-    F --> G["tippecanoe"]
-    G --> H["hex_hazard.pmtiles"]
-    H --> I["MapLibre GL JS"]
+```text
+Overture Maps GeoParquet (S3)
+        │
+        │  HTTP range requests, bbox pushdown (no full download)
+        ▼
+DuckDB: centroid → H3 res 9 → GROUP BY
+        │
+        ▼
+h3_agg.parquet
+        │
+        ▼
+DuckDB: spatial join with hazard polygons + benchmark
+        │
+        ▼
+h3_hazard.parquet
+        │
+        ▼
+GeoParquet export → GeoJSONSeq → tippecanoe
+        │
+        ▼
+hex_hazard.pmtiles (static file)
+        │
+        │  HTTP range requests
+        ▼
+MapLibre GL JS (static site)
 ```
 
 - **Storage is files:** Parquet on S3 in, GeoParquet and PMTiles out. Nothing to provision, patch, or back up.
