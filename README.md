@@ -7,33 +7,15 @@ A serverless geospatial ETL pipeline that turns Overture Maps building footprint
 ## Architecture: Decoupled Compute + Cloud-Native Storage
 
 ```mermaid
-flowchart LR
-    subgraph STORAGE_IN["Cloud-Native Storage (input)"]
-        S3[("Overture Maps<br/>GeoParquet on S3<br/>theme=buildings")]
-    end
-
-    subgraph COMPUTE["Ephemeral Compute (local / CI / container)"]
-        direction TB
-        S1["01_ingest_and_h3.py<br/>bbox pushdown, centroid,<br/>H3 res 9, GROUP BY"]
-        S2["02_hazard_join.py<br/>hazard GeoJSON,<br/>spatial join, benchmark"]
-        S3X["03_export_tiles.py<br/>GeoParquet, GeoJSONSeq,<br/>tippecanoe"]
-        S1 --> S2 --> S3X
-    end
-
-    subgraph STORAGE_OUT["Cloud-Native Storage (output)"]
-        PQ[("h3_agg.parquet<br/>h3_hazard.parquet<br/>hex_hazard.geoparquet")]
-        PM[("hex_hazard.pmtiles<br/>static file")]
-    end
-
-    subgraph CLIENT["Static Frontend"]
-        MAP["MapLibre GL JS<br/>+ pmtiles protocol"]
-    end
-
-    S3 -- "HTTP range requests<br/>(no full download)" --> S1
-    S1 --> PQ
-    PQ --> S2
-    S3X --> PM
-    PM -- "HTTP range requests" --> MAP
+flowchart TD
+    A["Overture Maps GeoParquet (S3)"] --> B["DuckDB: centroid + H3 res 9 + GROUP BY"]
+    B --> C["h3_agg.parquet"]
+    C --> D["DuckDB: spatial join with hazard zones + benchmark"]
+    D --> E["h3_hazard.parquet"]
+    E --> F["GeoParquet export"]
+    F --> G["tippecanoe"]
+    G --> H["hex_hazard.pmtiles"]
+    H --> I["MapLibre GL JS"]
 ```
 
 - **Storage is files:** Parquet on S3 in, GeoParquet and PMTiles out. Nothing to provision, patch, or back up.
