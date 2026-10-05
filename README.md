@@ -67,12 +67,6 @@ Run each block one at a time, in order.
 python src/01_ingest_and_h3.py
 ```
 
-To pin a specific Overture release instead of using the latest:
-
-```bash
-OVERTURE_RELEASE=<version> python src/01_ingest_and_h3.py
-```
-
 **2. Join hazard zones and benchmark.** Writes a synthetic wildfire hazard GeoJSON, spatially joins it to the H3 hexagons, times the join over several runs, and writes `data/h3_hazard.parquet`.
 
 ```bash
