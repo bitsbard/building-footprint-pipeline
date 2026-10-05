@@ -46,19 +46,9 @@ Run each block one at a time, in order, from the project root.
 **1. Create a virtual environment.** Isolates the project's Python dependencies from your system Python.
 
 ```bash
-python -m venv .venv
-```
-
-**2. Activate it.** Makes `python` and `pip` point at the virtual environment. On Windows use `.venv\Scripts\activate` instead.
-
-```bash
-source .venv/bin/activate
-```
-
-**3. Install Python dependencies.** Installs DuckDB. The `spatial`, `httpfs`, and `h3` extensions are downloaded by the scripts on first run.
-
-```bash
-pip install -r requirements.txt
+python3 -m venv path/to/venv
+source path/to/venv/bin/activate
+python3 -m pip install -r requirements.txt
 ```
 
 **4. Install tippecanoe (v2.17+).** Required by step 3 of the pipeline to build PMTiles. On Linux, build from [source](https://github.com/felt/tippecanoe). On Windows, use WSL.
