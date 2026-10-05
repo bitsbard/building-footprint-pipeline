@@ -90,3 +90,33 @@ npx http-server . -p 8080 --cors
 ```text
 http://localhost:8080/frontend/
 ```
+
+## Results
+
+Output of a full run over Santa Cruz County, CA.
+
+| Stage | Result |
+|---|---|
+| Buildings read from Overture (bbox pushdown) | 309,944 |
+| H3 res 9 cells produced | 9,239 |
+| Ingest and aggregation time (S3 to Parquet) | 129 s |
+| Hazard join time over 9,239 cells, 3 zones (median of 5) | 52 ms |
+| Final PMTiles size | 0.58 MB |
+
+### Wildfire hazard view
+
+Hexagons colored by hazard class. This run used the synthetic hazard layer, which is why the zone edges are straight.
+
+![Wildfire hazard view](public/img_1.png)
+
+### Building density view
+
+Hexagons colored by building count. Density peaks in Santa Cruz, Capitola, and Watsonville.
+
+![Building count view](public/img_2.png)
+
+### Zoomed in with popup details
+
+Zoomed in on downtown Santa Cruz. Clicking a hexagon shows its H3 id, building count, total footprint area, and hazard class.
+
+![Hexagon popup in downtown Santa Cruz](public/img_3.png)
