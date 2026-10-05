@@ -41,7 +41,7 @@ MapLibre GL JS (static site)
 
 ## Setup
 
-Run each block one at a time, in order, from the project root (`cloud-native-geo/`).
+Run each block one at a time, in order, from the project root.
 
 **1. Create a virtual environment.** Isolates the project's Python dependencies from your system Python.
 
