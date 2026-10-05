@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Building Footprint Pipeline: Santa Cruz</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+  <style>
+    html, body, #map { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+    .panel { position: absolute; top: 10px; left: 10px; background: #fff; padding: 10px 12px;
+             border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 13px; z-index: 1; }
+    .panel select { margin-left: 6px; }
+    .legend div { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+    .sw { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <strong>H3 res 9 hexagons</strong><br />
+  <label>Color by
+    <select id="mode">
+      <option value="hazard">Wildfire hazard (mock)</option>
+      <option value="count">Building count</option>
+    </select>
+  </label>
+  <div class="legend" id="legend"></div>
+</div>
+
+<script>
+  const PMTILES_URL = new URL("../data/hex_hazard.pmtiles", window.location.href).href;
+
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+
+  const hazardColor = ["match", ["get", "hazard_class"],
+    "Very High", "#b30000", "High", "#e34a33", "Moderate", "#fdae61", "#9ecae1"];
+  const countColor = ["interpolate", ["linear"], ["get", "building_count"],
+    0, "#f7fbff", 20, "#c6dbef", 80, "#6baed6", 200, "#2171b5", 400, "#08306b"];
+
+  const legends = {
+    hazard: [["Very High", "#b30000"], ["High", "#e34a33"], ["Moderate", "#fdae61"], ["None", "#9ecae1"]],
+    count:  [["0", "#f7fbff"], ["20", "#c6dbef"], ["80", "#6baed6"], ["200", "#2171b5"], ["400+", "#08306b"]],
+  };
+
+  const map = new maplibregl.Map({
+    container: "map",
+    style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    center: [-122.03, 37.02],
+    zoom: 9.5,
+  });
+  map.addControl(new maplibregl.NavigationControl());
+
+  function renderLegend(mode) {
+    document.getElementById("legend").innerHTML = legends[mode]
+      .map(([l, c]) => `<div><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
+  }
+
+  map.on("load", () => {
+    map.addSource("hex", { type: "vector", url: "pmtiles://" + PMTILES_URL });
+    map.addLayer({
+      id: "hex-fill", type: "fill", source: "hex", "source-layer": "hexagons",
+      paint: { "fill-color": hazardColor, "fill-opacity": 0.65 },
+    });
+    map.addLayer({
+      id: "hex-line", type: "line", source: "hex", "source-layer": "hexagons",
+      paint: { "line-color": "#555", "line-width": 0.3, "line-opacity": 0.5 },
+    });
+    renderLegend("hazard");
+
+    document.getElementById("mode").addEventListener("change", (e) => {
+      map.setPaintProperty("hex-fill", "fill-color", e.target.value === "hazard" ? hazardColor : countColor);
+      renderLegend(e.target.value);
+    });
+
+    map.on("click", "hex-fill", (e) => {
+      const p = e.features[0].properties;
+      new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+        `<strong>${p.h3_cell}</strong><br/>Buildings: ${p.building_count}<br/>` +
+        `Footprint: ${Number(p.total_footprint_m2).toLocaleString()} m²<br/>Hazard: ${p.hazard_class}`
+      ).addTo(map);
+    });
+    map.on("mouseenter", "hex-fill", () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", "hex-fill", () => (map.getCanvas().style.cursor = ""));
+  });
+</script>
+</body>
+</html>
