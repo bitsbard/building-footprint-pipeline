@@ -51,7 +51,7 @@ source path/to/venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
 
-**4. Install tippecanoe (v2.17+).** Required by step 3 of the pipeline to build PMTiles. On Linux, build from [source](https://github.com/felt/tippecanoe). On Windows, use WSL.
+**2. Install tippecanoe (v2.17+).** Required to build PMTiles.
 
 ```bash
 brew install tippecanoe
